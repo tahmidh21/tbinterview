@@ -634,7 +634,7 @@
     </div>
 </div>
 <script>
-const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === '') ? 'http://127.0.0.1:8000' : 'http://localhost:8000';
+const API_BASE = window.location.hostname ? `http://${window.location.hostname}:8000` : 'http://127.0.0.1:8000';
 let chartInst = null;
 let featureImportanceData = null;  // store once fetched
 
