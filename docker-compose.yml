@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: tb_risk_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount the database to persist data outside the container
+      - ./backend/predictions.db:/app/backend/predictions.db
+    restart: always
+
+  frontend:
+    image: python:3.11-slim
+    container_name: tb_risk_frontend
+    working_dir: /app
+    volumes:
+      # Mount the current directory to serve static files
+      - .:/app
+    ports:
+      - "3000:3000"
+    command: python -m http.server 3000
+    restart: always

@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TB Risk Intelligence | Research Prototype</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet GIS Mapping -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* ===== CSS VARIABLES ===== */
+        :root {
+            --bg: #f5f6f8;
+            --surface: #ffffff;
+            --surface-alt: #f9fafb;
+            --text-1: #0f172a;
+            --text-2: #475569;
+            --text-3: #94a3b8;
+            --border: #e2e8f0;
+            --border-strong: #cbd5e1;
+
+            /* Single warm accent — ONLY for risk result/gauge */
+            --accent: #f59e0b;
+            --accent-glow: rgba(245, 158, 11, 0.15);
+
+            /* Risk colors */
+            --risk-low: #22c55e;
+            --risk-low-bg: rgba(34,197,94,0.1);
+            --risk-med: #f59e0b;
+            --risk-med-bg: rgba(245,158,11,0.1);
+            --risk-high: #ef4444;
+            --risk-high-bg: rgba(239,68,68,0.1);
+
+            /* Interaction */
+            --focus-ring: 0 0 0 3px rgba(15,23,42,0.12);
+            --primary-btn: #0f172a;
+            --primary-btn-hover: #1e293b;
+
+            --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
+            --shadow-md: 0 4px 12px rgb(0 0 0 / 0.06);
+
+            --mono: 'JetBrains Mono', 'IBM Plex Mono', 'Fira Code', monospace;
+            --sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+            --radius: 10px;
+            --gap: 8px;
+        }
+
+        [data-theme="dark"] {
+            --bg: #0b0f19;
+            --surface: #141a2a;
+            --surface-alt: #1a2136;
+            --text-1: #f1f5f9;
+            --text-2: #94a3b8;
+            --text-3: #64748b;
+            --border: #1e293b;
+            --border-strong: #334155;
+            --focus-ring: 0 0 0 3px rgba(241,245,249,0.1);
+            --primary-btn: #e2e8f0;
+            --primary-btn-hover: #f1f5f9;
+            --shadow-md: 0 4px 12px rgb(0 0 0 / 0.3);
+            --risk-low-bg: rgba(34,197,94,0.15);
+            --risk-med-bg: rgba(245,158,11,0.15);
+            --risk-high-bg: rgba(239,68,68,0.15);
+        }
+        [data-theme="dark"] .btn-predict { color: #0f172a; }
+
+        /* ===== RESET & BASE ===== */
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: var(--sans);
+            background: var(--bg);
+            color: var(--text-1);
+            margin: 0; line-height: 1.6;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        /* ===== NAVBAR ===== */
+        .navbar {
+            position: sticky; top: 0; z-index: 100;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0 32px; height: 64px;
+            display: flex; align-items: center; justify-content: space-between;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        /* Subtle noise texture on header — barely perceptible */
+        .navbar::before {
+            content: ''; position: absolute; inset: 0; z-index: -1;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+            background-repeat: repeat; pointer-events: none;
+        }
+        .nav-brand { display: flex; align-items: center; gap: 12px; }
+        .brand-icon {
+            width: 36px; height: 36px; border-radius: 8px;
+            background: var(--text-1); color: var(--surface);
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--mono); font-weight: 700; font-size: 14px;
+        }
+        .brand-text h1 { font-size: 16px; margin: 0; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .badge-rp {
+            font-family: var(--mono); font-size: 9px; font-weight: 600;
+            background: var(--surface-alt); border: 1px solid var(--border);
+            padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-2);
+        }
+        .brand-text p { font-size: 12px; margin: 0; color: var(--text-3); }
+
+        .nav-right { display: flex; align-items: center; gap: 16px; }
+        .nav-right a { color: var(--text-2); text-decoration: none; font-size: 13px; font-weight: 500; transition: color 0.2s; }
+        .nav-right a:hover { color: var(--text-1); }
+
+        .status-pill {
+            display: flex; align-items: center; gap: 6px;
+            font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--text-2);
+            border: 1px solid var(--border); padding: 4px 10px; border-radius: 20px;
+        }
+        .status-dot { width: 6px; height: 6px; background: var(--risk-low); border-radius: 50%; box-shadow: 0 0 6px var(--risk-low); }
+
+        .theme-btn {
+            background: none; border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text-2); cursor: pointer; font-size: 14px; padding: 4px 8px;
+            transition: border-color 0.2s;
+        }
+        .theme-btn:hover { border-color: var(--text-2); }
+        .theme-btn:focus { box-shadow: var(--focus-ring); outline: none; }
+
+        /* ===== LAYOUT ===== */
+        .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+
+        .section-title {
+            font-size: 13px; font-weight: 600; color: var(--text-3); text-transform: uppercase;
+            letter-spacing: 0.08em; margin: 0 0 16px 0; font-family: var(--mono);
+        }
+
+        /* ===== KPI CARDS ===== */
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+        @media (max-width: 640px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+        .kpi-card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 20px; transition: background 0.3s, border-color 0.3s;
+        }
+        .kpi-label { font-size: 12px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+        .kpi-val { font-family: var(--mono); font-size: 28px; font-weight: 700; }
+
+        /* ===== CARD ===== */
+        .card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            overflow: hidden; transition: background 0.3s, border-color 0.3s;
+        }
+        .card-hd { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+        .card-hd h3 { margin: 0; font-size: 14px; font-weight: 600; }
+        .card-bd { padding: 20px; }
+
+        /* ===== ASSESSMENT LAYOUT ===== */
+        .assess-grid { display: grid; grid-template-columns: 5fr 3fr; gap: 24px; margin-bottom: 40px; }
+        @media (max-width: 900px) { .assess-grid { grid-template-columns: 1fr; } }
+
+        /* Form elements */
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-2); }
+        .form-select {
+            width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--surface); color: var(--text-1); font-family: var(--sans); font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        .form-select:focus { box-shadow: var(--focus-ring); outline: none; border-color: var(--border-strong); }
+
+        /* Symptom categories */
+        .sym-cat { margin-bottom: 24px; }
+        .sym-cat-hd {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 12px; font-size: 12px; font-weight: 600; color: var(--text-3);
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .sym-cat-hd .cnt { font-family: var(--mono); }
+
+        .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+
+        .sym-card {
+            display: flex; align-items: flex-start; padding: 10px 12px;
+            border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+            transition: all 0.15s; background: var(--surface); position: relative;
+        }
+        .sym-card:hover { border-color: var(--border-strong); }
+        .sym-card:focus-within { box-shadow: var(--focus-ring); }
+        .sym-card.selected { background: var(--surface-alt); border-color: var(--text-1); }
+        .sym-card input { position: absolute; opacity: 0; pointer-events: none; }
+
+        .chk-box {
+            width: 16px; height: 16px; border: 1.5px solid var(--border-strong); border-radius: 3px;
+            margin-right: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+            margin-top: 2px; transition: all 0.15s;
+        }
+        .sym-card.selected .chk-box { background: var(--text-1); border-color: var(--text-1); }
+        .sym-card.selected .chk-box::after {
+            content: ''; width: 4px; height: 7px; border: solid var(--surface); border-width: 0 1.5px 1.5px 0;
+            transform: rotate(45deg); margin-bottom: 1px;
+        }
+
+        .sym-info { flex: 1; min-width: 0; }
+        .sym-name { font-size: 13px; font-weight: 500; user-select: none; display: flex; align-items: center; gap: 6px; }
+        .sym-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+        /* Relevance dot */
+        .rel-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+        .rel-dot.high { background: var(--risk-high); }
+        .rel-dot.medium { background: var(--risk-med); }
+        .rel-dot.low { background: var(--risk-low); }
+
+        /* ===== SUMMARY PANEL ===== */
+        .sum-box { background: var(--surface-alt); border-radius: 8px; padding: 16px; margin-bottom: 20px; border: 1px solid var(--border); }
+        .sum-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; color: var(--text-2); }
+        .sum-row span:last-child { font-family: var(--mono); font-weight: 600; color: var(--text-1); }
+        .sum-row.total { font-weight: 700; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; color: var(--text-1); }
+
+        /* ===== PREDICT BUTTON ===== */
+        .btn-predict {
+            width: 100%; padding: 14px; border-radius: 8px; border: none;
+            background: var(--primary-btn); color: var(--surface); font-weight: 600; font-size: 14px;
+            cursor: pointer; transition: all 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px;
+            font-family: var(--sans);
+        }
+        .btn-predict:hover:not(:disabled) { background: var(--primary-btn-hover); }
+        .btn-predict:focus { box-shadow: var(--focus-ring); outline: none; }
+        .btn-predict:disabled { opacity: 0.6; cursor: not-allowed; }
+        .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; display: none; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ===== SKELETON LOADER ===== */
+        .skeleton-loader {
+            display: none; margin-top: 20px; padding: 24px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--surface-alt);
+        }
+        .skel-line {
+            height: 12px; border-radius: 4px; margin-bottom: 10px;
+            background: linear-gradient(90deg, var(--border) 25%, var(--surface) 50%, var(--border) 75%);
+            background-size: 200% 100%; animation: shimmer 1.5s infinite;
+        }
+        .skel-line.w60 { width: 60%; }
+        .skel-line.w80 { width: 80%; }
+        .skel-line.w40 { width: 40%; margin: 16px auto 0; }
+        .skel-circle { width: 80px; height: 80px; border-radius: 50%; margin: 16px auto; background: linear-gradient(90deg, var(--border) 25%, var(--surface) 50%, var(--border) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+        /* ===== RESULT CARD ===== */
+        #resultCard { display: none; margin-top: 20px; animation: fadeUp 0.4s ease-out; }
+        @keyframes fadeUp { from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+
+        .result-inner { padding: 24px; border-radius: 8px; text-align: center; border: 1px solid transparent; }
+        .result-inner.Low { background: var(--risk-low-bg); border-color: var(--risk-low); }
+        .result-inner.Medium { background: var(--risk-med-bg); border-color: var(--risk-med); }
+        .result-inner.High { background: var(--risk-high-bg); border-color: var(--risk-high); }
+
+        .res-label { font-family: var(--mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; }
+        .Low .res-label, .Low .res-val { color: var(--risk-low); }
+        .Medium .res-label, .Medium .res-val { color: var(--risk-med); }
+        .High .res-label, .High .res-val { color: var(--risk-high); }
+        .res-val { font-family: var(--mono); font-size: 36px; font-weight: 800; margin: 4px 0; line-height: 1; }
+        .res-conf { font-family: var(--mono); font-size: 13px; color: var(--text-2); }
+        .res-syms { font-size: 12px; color: var(--text-2); margin-top: 6px; }
+        .res-syms span { font-family: var(--mono); font-weight: 600; }
+
+        /* ===== RADIAL GAUGE ===== */
+        .gauge-container { margin: 20px auto 0; width: 200px; height: 110px; position: relative; }
+        .gauge-svg { width: 200px; height: 110px; }
+        .gauge-bg { fill: none; stroke: var(--border); stroke-width: 10; stroke-linecap: round; }
+        .gauge-fill-low { fill: none; stroke: var(--risk-low); stroke-width: 10; stroke-linecap: round; }
+        .gauge-fill-med { fill: none; stroke: var(--risk-med); stroke-width: 10; stroke-linecap: round; }
+        .gauge-fill-high { fill: none; stroke: var(--risk-high); stroke-width: 10; stroke-linecap: round; }
+        .gauge-needle {
+            fill: var(--text-1); transform-origin: 100px 95px; transition: transform 0.8s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        .gauge-labels-row { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--text-3); margin-top: 4px; }
+
+        .res-insight { font-size: 12px; color: var(--text-2); margin-top: 16px; line-height: 1.5; padding: 12px; background: var(--surface-alt); border-radius: 6px; border: 1px solid var(--border); text-align: left; }
+        .res-insight strong { color: var(--text-1); }
+
+        /* ===== LOWER GRID ===== */
+        .lower-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 40px; }
+        @media (max-width: 900px) { .lower-grid { grid-template-columns: 1fr; } }
+
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
+        td { color: var(--text-2); }
+        .ts-cell { font-family: var(--mono); font-size: 12px; }
+        .conf-cell { font-family: var(--mono); font-weight: 600; }
+        .badge { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; font-family: var(--mono); }
+        .badge.Low { background: var(--risk-low-bg); color: var(--risk-low); }
+        .badge.Medium { background: var(--risk-med-bg); color: var(--risk-med); }
+        .badge.High { background: var(--risk-high-bg); color: var(--risk-high); }
+
+        .chart-wrap { height: 200px; }
+
+        /* Empty states with inline SVG */
+        .empty-state { text-align: center; padding: 32px 16px; color: var(--text-3); font-size: 13px; }
+        .empty-state svg { width: 32px; height: 32px; margin-bottom: 8px; opacity: 0.4; }
+
+        /* ===== PIPELINE ===== */
+        .pipeline-wrap { display: flex; align-items: center; justify-content: center; gap: 0; padding: 20px 0; overflow-x: auto; position: relative; }
+        .pipe-node {
+            background: var(--surface); border: 1px solid var(--border); padding: 10px 14px;
+            border-radius: 6px; font-size: 12px; font-weight: 500; text-align: center;
+            min-width: 100px; position: relative; z-index: 1;
+        }
+        .pipe-arrow { color: var(--text-3); font-family: var(--mono); font-size: 14px; padding: 0 4px; position: relative; }
+
+        /* Pipeline pulse animation */
+        .pipe-pulse {
+            position: absolute; top: 50%; left: 0; transform: translateY(-50%);
+            width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+            box-shadow: 0 0 8px var(--accent); opacity: 0; z-index: 10; pointer-events: none;
+        }
+        .pipeline-wrap.animating .pipe-pulse {
+            animation: pipeTravel 2s ease-in-out infinite;
+            opacity: 1;
+        }
+        @keyframes pipeTravel { 0%{left:0;opacity:0} 10%{opacity:1} 90%{opacity:1} 100%{left:100%;opacity:0} }
+
+        /* Hotspot */
+        .hotspot-placeholder {
+            background: var(--surface-alt); border: 1px dashed var(--border); border-radius: 8px;
+            padding: 40px 20px; text-align: center; color: var(--text-3);
+        }
+
+        /* ===== ABOUT / COLLAPSIBLE ===== */
+        .about-toggle {
+            cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+            font-weight: 600; color: var(--text-1); user-select: none;
+        }
+        .about-toggle:focus { box-shadow: var(--focus-ring); outline: none; }
+        .about-icon { font-family: var(--mono); font-size: 12px; color: var(--text-3); }
+        .about-body { display: none; padding: 20px; font-size: 13px; color: var(--text-2); border-top: 1px solid var(--border); line-height: 1.7; }
+        .about-body ul { padding-left: 20px; }
+        .about-body li { margin-bottom: 6px; }
+
+        /* Feature importance bars */
+        .fi-list { margin-top: 16px; }
+        .fi-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 13px; }
+        .fi-name { width: 140px; flex-shrink: 0; color: var(--text-2); text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .fi-bar-bg { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+        .fi-bar { height: 100%; background: var(--text-1); border-radius: 4px; transition: width 0.6s ease; }
+        .fi-val { font-family: var(--mono); font-size: 12px; color: var(--text-3); width: 45px; text-align: right; }
+
+        /* ===== FOOTER ===== */
+        .footer {
+            text-align: center; padding: 32px; color: var(--text-3); font-size: 12px;
+            border-top: 1px solid var(--border); margin-top: 40px;
+        }
+        .footer strong { color: var(--text-2); }
+
+        /* Error alert */
+        #errorAlert { display:none; background: var(--risk-high-bg); color: var(--risk-high); padding: 12px 16px; border-radius: 8px; margin-bottom: 24px; font-size: 13px; font-weight: 500; text-align: center; border: 1px solid var(--risk-high); }
+    </style>
+</head>
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<nav class="navbar" id="nav-overview">
+    <div class="nav-brand">
+        <div class="brand-icon">TB</div>
+        <div class="brand-text">
+            <h1>TB Risk Intelligence <span class="badge-rp">Research Prototype</span></h1>
+            <p>AI-Assisted Healthcare Risk Assessment &amp; Analytics</p>
+        </div>
+    </div>
+    <div class="nav-right">
+        <a href="#nav-overview">Overview</a>
+        <a href="#sec-assessment">Assessment</a>
+        <a href="#sec-analytics">Analytics</a>
+        <a href="#sec-model">Model</a>
+        <div class="status-pill"><div class="status-dot"></div>AI Model Active</div>
+        <button class="theme-btn" id="themeToggle" title="Toggle theme">&#9789;</button>
+    </div>
+</nav>
+
+<div class="container">
+
+    <div id="errorAlert"></div>
+
+    <!-- ===== KPI DASHBOARD ===== -->
+    <p class="section-title">Dashboard Overview</p>
+    <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">Total Assessments</div><div class="kpi-val" id="kpiTotal">0</div></div>
+        <div class="kpi-card"><div class="kpi-label" style="color:var(--risk-low)">Low Risk</div><div class="kpi-val" id="kpiLow" style="color:var(--risk-low)">0</div></div>
+        <div class="kpi-card"><div class="kpi-label" style="color:var(--risk-med)">Medium Risk</div><div class="kpi-val" id="kpiMed" style="color:var(--risk-med)">0</div></div>
+        <div class="kpi-card"><div class="kpi-label" style="color:var(--risk-high)">High Risk</div><div class="kpi-val" id="kpiHigh" style="color:var(--risk-high)">0</div></div>
+    </div>
+
+    <!-- ===== ASSESSMENT ===== -->
+    <p class="section-title" id="sec-assessment">New Risk Assessment</p>
+    <div class="assess-grid">
+
+        <!-- LEFT: Symptoms -->
+        <div class="card">
+            <div class="card-hd"><h3>Patient Data &amp; Symptom Assessment</h3></div>
+            <div class="card-bd">
+                <form id="predictionForm">
+                    <div class="form-group">
+                        <label class="form-label">Biological Sex</label>
+                        <select id="gender" name="gender" class="form-select">
+                            <option value="0">Male</option>
+                            <option value="1">Female</option>
+                        </select>
+                    </div>
+
+                    <!-- Respiratory -->
+                    <div class="sym-cat">
+                        <div class="sym-cat-hd"><span>Respiratory Symptoms</span><span class="cnt" id="cntResp">0/4</span></div>
+                        <div class="sym-grid">
+                            <label class="sym-card" data-cat="resp"><input type="checkbox" id="coughing_blood" name="coughing_blood"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="coughing_blood"></span>Coughing blood</div><div class="sym-sub">Hemoptysis</div></div></label>
+                            <label class="sym-card" data-cat="resp"><input type="checkbox" id="sputum_mixed_with_blood" name="sputum_mixed_with_blood"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="sputum_mixed_with_blood"></span>Blood in sputum</div><div class="sym-sub">Mixed with phlegm</div></div></label>
+                            <label class="sym-card" data-cat="resp"><input type="checkbox" id="shortness_of_breath" name="shortness_of_breath"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="shortness_of_breath"></span>Shortness of breath</div><div class="sym-sub">Dyspnea</div></div></label>
+                            <label class="sym-card" data-cat="resp"><input type="checkbox" id="cough_and_phlegm_continuously_for_two_weeks_to_four_weeks" name="cough_and_phlegm_continuously_for_two_weeks_to_four_weeks"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="cough_and_phlegm_continuously_for_two_weeks_to_four_weeks"></span>Continuous cough</div><div class="sym-sub">Persisting 2–4 weeks</div></div></label>
+                        </div>
+                    </div>
+
+                    <!-- Systemic -->
+                    <div class="sym-cat">
+                        <div class="sym-cat-hd"><span>Systemic Symptoms</span><span class="cnt" id="cntSys">0/5</span></div>
+                        <div class="sym-grid">
+                            <label class="sym-card" data-cat="sys"><input type="checkbox" id="fever_for_two_weeks" name="fever_for_two_weeks"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="fever_for_two_weeks"></span>Prolonged fever</div><div class="sym-sub">Lasting 2+ weeks</div></div></label>
+                            <label class="sym-card" data-cat="sys"><input type="checkbox" id="night_sweats" name="night_sweats"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="night_sweats"></span>Night sweats</div><div class="sym-sub">Heavy perspiration</div></div></label>
+                            <label class="sym-card" data-cat="sys"><input type="checkbox" id="weight_loss" name="weight_loss"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="weight_loss"></span>Weight loss</div><div class="sym-sub">Unexplained drop</div></div></label>
+                            <label class="sym-card" data-cat="sys"><input type="checkbox" id="body_feels_tired" name="body_feels_tired"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="body_feels_tired"></span>Chronic fatigue</div><div class="sym-sub">Body feels tired</div></div></label>
+                            <label class="sym-card" data-cat="sys"><input type="checkbox" id="loss_of_appetite" name="loss_of_appetite"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="loss_of_appetite"></span>Loss of appetite</div><div class="sym-sub">Reduced desire to eat</div></div></label>
+                        </div>
+                    </div>
+
+                    <!-- Physical -->
+                    <div class="sym-cat">
+                        <div class="sym-cat-hd"><span>Physical Signs</span><span class="cnt" id="cntPhys">0/4</span></div>
+                        <div class="sym-grid">
+                            <label class="sym-card" data-cat="phys"><input type="checkbox" id="chest_pain" name="chest_pain"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="chest_pain"></span>Chest pain</div><div class="sym-sub">Localized discomfort</div></div></label>
+                            <label class="sym-card" data-cat="phys"><input type="checkbox" id="back_pain_in_certain_parts" name="back_pain_in_certain_parts"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="back_pain_in_certain_parts"></span>Back pain</div><div class="sym-sub">In specific regions</div></div></label>
+                            <label class="sym-card" data-cat="phys"><input type="checkbox" id="lumps_that_appear_around_the_armpits_and_neck" name="lumps_that_appear_around_the_armpits_and_neck"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="lumps_that_appear_around_the_armpits_and_neck"></span>Visible lumps</div><div class="sym-sub">Armpits or neck</div></div></label>
+                            <label class="sym-card" data-cat="phys"><input type="checkbox" id="swollen_lymph_nodes" name="swollen_lymph_nodes"><div class="chk-box"></div><div class="sym-info"><div class="sym-name"><span class="rel-dot" data-feat="swollen_lymph_nodes"></span>Swollen lymph nodes</div><div class="sym-sub">Palpable swelling</div></div></label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- RIGHT: Summary + Result -->
+        <div>
+            <div class="card">
+                <div class="card-hd"><h3>Assessment Summary</h3></div>
+                <div class="card-bd">
+                    <div class="sum-box">
+                        <div class="sum-row"><span>Respiratory</span><span id="sumResp">0 / 4</span></div>
+                        <div class="sum-row"><span>Systemic</span><span id="sumSys">0 / 5</span></div>
+                        <div class="sum-row"><span>Physical Signs</span><span id="sumPhys">0 / 4</span></div>
+                        <div class="sum-row total"><span>Total Detected</span><span id="sumTotal">0 / 13</span></div>
+                    </div>
+
+                    <div style="display: flex; gap: 8px;">
+                        <button form="predictionForm" type="submit" id="submitBtn" class="btn-predict" style="flex: 1;">
+                            <span id="btnText">Run Risk Assessment</span>
+                            <div class="spinner" id="btnSpinner"></div>
+                        </button>
+                        <button type="button" id="resetBtn" style="flex: 0 0 auto; padding: 0 16px; background: var(--bg-card-hover); color: var(--text-1); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center;" onmouseover="this.style.borderColor='var(--border-strong)'; this.style.boxShadow='var(--focus-ring)'" onmouseout="this.style.borderColor='var(--border)'; this.style.boxShadow='none'" title="Reset Assessment">
+                            <svg style="width:16px;height:16px;display:inline;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Skeleton Loader -->
+                    <div class="skeleton-loader" id="skelLoader">
+                        <div class="skel-line w60" style="margin:0 auto"></div>
+                        <div class="skel-circle"></div>
+                        <div class="skel-line w80" style="margin:0 auto"></div>
+                        <div class="skel-line w40"></div>
+                    </div>
+
+                    <!-- AI Result -->
+                    <div id="resultCard">
+                        <div class="result-inner" id="resultInner">
+                            <div class="res-label">TB Risk Assessment</div>
+                            <div class="res-val" id="resScore">--</div>
+                            <div class="res-conf">Model Confidence: <span id="resConf" style="font-weight:700">--</span></div>
+                            <div style="font-size:10px; color:var(--text-3); margin-top:6px; line-height:1.4;">Confidence represents the model's confidence in the predicted risk classification; it is not a clinical probability of having tuberculosis.</div>
+                            <div class="res-syms">Symptoms detected: <span id="resTotal">0</span> / 13</div>
+
+                            <!-- Radial Gauge -->
+                            <div class="gauge-container">
+                                <svg class="gauge-svg" viewBox="0 0 200 110">
+                                    <!-- Background arc -->
+                                    <path class="gauge-bg" d="M 15 95 A 85 85 0 0 1 185 95" />
+                                    <!-- Colored segments -->
+                                    <path class="gauge-fill-low" d="M 15 95 A 85 85 0 0 1 71.7 22.3" />
+                                    <path class="gauge-fill-med" d="M 71.7 22.3 A 85 85 0 0 1 128.3 22.3" />
+                                    <path class="gauge-fill-high" d="M 128.3 22.3 A 85 85 0 0 1 185 95" />
+                                    <!-- Needle -->
+                                    <polygon id="gaugeNeedle" class="gauge-needle" points="97,95 103,95 100,25" transform="rotate(-90, 100, 95)" />
+                                    <!-- Center cap -->
+                                    <circle cx="100" cy="95" r="6" fill="var(--text-1)" />
+                                </svg>
+                                <div class="gauge-labels-row"><span>LOW</span><span>MED</span><span>HIGH</span></div>
+                            </div>
+                        </div>
+
+                        <div class="res-insight" id="resInsight">
+                            <strong>Assessment Insights</strong><br>
+                            Respiratory: <span id="insResp">0</span>/4 &middot;
+                            Systemic: <span id="insSys">0</span>/5 &middot;
+                            Physical: <span id="insPhys">0</span>/4
+                        </div>
+                        <button id="printReportBtn" type="button" style="width:100%; margin-top:12px; padding:10px; background:var(--bg-card-hover); color:var(--text-2); border:1px solid var(--border); border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; transition:all 0.2s; display:none;" onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border)'">Print Risk Assessment Report</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== ANALYTICS ===== -->
+    <p class="section-title" id="sec-analytics">Risk Analytics</p>
+    <div class="lower-grid">
+        <div class="card">
+            <div class="card-hd"><h3>Risk Distribution</h3></div>
+            <div class="card-bd"><div class="chart-wrap"><canvas id="distChart"></canvas></div></div>
+        </div>
+        <div class="card">
+            <div class="card-hd" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>Recent Assessments</h3>
+                <div style="display:flex; gap:8px;">
+                    <button id="clearHistoryBtn" class="theme-btn" style="font-size:11px; padding:4px 8px; min-width:auto; width:auto; border-radius:4px; height:auto; margin-top:0; border-color:var(--tier-high); color:var(--tier-high); background:transparent;" title="Clear History">
+                        <svg style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        Clear
+                    </button>
+                    <button id="exportCsvBtn" class="theme-btn" style="font-size:11px; padding:4px 8px; min-width:auto; width:auto; border-radius:4px; height:auto; margin-top:0;">
+                        <svg style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        CSV
+                    </button>
+                </div>
+            </div>
+            <div class="card-bd" style="padding:0; max-height:300px; overflow-y:auto;">
+                <table id="historyTable">
+                    <thead><tr><th>Timestamp</th><th>Risk</th><th>Confidence</th></tr></thead>
+                    <tbody id="historyBody"></tbody>
+                </table>
+                <div id="historyEmpty" class="empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    <div>No assessments recorded yet.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== PIPELINE & HOTSPOT ===== -->
+    <div class="lower-grid">
+        <div class="card">
+            <div class="card-hd"><h3>TB Hotspot Intelligence</h3></div>
+            <div class="card-bd">
+                <div id="hotspotMap" style="height: 250px; width: 100%; border-radius: 8px; border: 1px solid var(--border); z-index: 1;"></div>
+                <div style="font-size: 11px; color: var(--text-3); margin-top: 8px; text-align: center;">* Geospatial Analytics Preview: Displaying illustrative demo / research data for TB risk clusters in the Klang Valley region.</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-hd"><h3>AI Assessment Pipeline</h3></div>
+            <div class="card-bd">
+                <div class="pipeline-wrap" id="pipelineWrap">
+                    <div class="pipe-pulse" id="pipePulse"></div>
+                    <div class="pipe-node">User Symptoms</div>
+                    <div class="pipe-arrow">&rarr;</div>
+                    <div class="pipe-node">Web Interface</div>
+                    <div class="pipe-arrow">&rarr;</div>
+                    <div class="pipe-node">FastAPI</div>
+                    <div class="pipe-arrow">&rarr;</div>
+                    <div class="pipe-node">ML Model</div>
+                    <div class="pipe-arrow">&rarr;</div>
+                    <div class="pipe-node">Risk Class.</div>
+                    <div class="pipe-arrow">&rarr;</div>
+                    <div class="pipe-node">Dashboard</div>
+                </div>
+                <p style="font-size:11px;color:var(--text-3);text-align:center;margin:12px 0 0;">
+                    Data flows from the web interface through the Python backend where the RandomForest classifier returns real-time risk scoring.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== ABOUT MODEL ===== -->
+    <div class="card" id="sec-model">
+        <div class="card-hd about-toggle" id="aboutToggle" tabindex="0" role="button" aria-expanded="false">
+            <span>About This Model</span>
+            <span class="about-icon" id="aboutIcon">&#9660;</span>
+        </div>
+        <div class="about-body" id="aboutBody">
+            <ul>
+                <li>The model is a <strong>RandomForestClassifier</strong> trained on approximately 1,000 patient symptom records.</li>
+                <li>Risk labels (Low / Medium / High) were derived from symptom count since the dataset had no ground-truth diagnosis labels.</li>
+                <li>The training data was imbalanced (~15% Low, ~74% Medium, ~11% High).</li>
+                <li>The model is highly reliable at identifying Medium-risk cases but has lower recall for Low and High extremes.</li>
+                <li>This prototype demonstrates full-stack integration of machine learning into a web application.</li>
+            </ul>
+
+            <h4 style="margin:20px 0 8px;font-size:13px;">What Drives This Model's Predictions</h4>
+            <p style="font-size:12px;color:var(--text-3);margin:0 0 12px;">Feature importance derived from the trained RandomForestClassifier. These values describe how the model uses the input features and should not be interpreted as clinical importance or medical causation.</p>
+            <div id="fiContainer" class="fi-list">
+                <div class="empty-state" style="padding:12px;">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+                    <div>Loading feature importance data...</div>
+                </div>
+            </div>
+
+            <p style="margin-top:20px;padding:12px;background:var(--risk-med-bg);border-radius:6px;font-size:12px;color:var(--text-2);">
+                <strong>Research Prototype</strong> &mdash; This system is intended for research and demonstration purposes only and is not a validated clinical diagnostic tool. Predictions should not be used for real medical decisions.
+            </p>
+        </div>
+    </div>
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="footer">
+        <div style="font-weight:600;color:var(--text-1);margin-bottom:4px;">TB Risk Intelligence</div>
+        <div>AI-Assisted Healthcare Risk Assessment</div>
+        <div style="margin-top:8px;font-family:var(--mono);font-size:11px;letter-spacing:0.05em;">RESEARCH PROTOTYPE</div>
+        <div style="margin-top:8px;">This system is intended for research and demonstration purposes only and is not a clinical diagnostic tool.</div>
+    </footer>
+</div>
+
+
+<div id="clearHistoryModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+    <div style="background:var(--bg-card); padding:24px; border-radius:12px; max-width:400px; width:90%; border:1px solid var(--border); box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+        <h3 style="margin-top:0; color:var(--text-1); font-size:18px; font-family:var(--sans);">Clear Assessment History?</h3>
+        <p style="color:var(--text-2); font-size:14px; line-height:1.5; margin-bottom:24px; font-family:var(--sans);">Remove all stored prediction records from this application? This will not affect the trained model or training dataset.</p>
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+            <button id="cancelClearBtn" style="background:transparent; border:1px solid var(--border); color:var(--text-2); padding:8px 16px; border-radius:6px; cursor:pointer; font-family:var(--sans); font-weight:500; transition:all 0.2s;" onmouseover="this.style.borderColor='var(--text-3)'" onmouseout="this.style.borderColor='var(--border)'">Cancel</button>
+            <button id="confirmClearBtn" style="background:var(--tier-high); border:none; color:white; padding:8px 16px; border-radius:6px; cursor:pointer; font-family:var(--sans); font-weight:600; transition:all 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">Clear History</button>
+        </div>
+    </div>
+</div>
+<script>
+const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === '') ? 'http://127.0.0.1:8000' : 'http://localhost:8000';
+let chartInst = null;
+let featureImportanceData = null;  // store once fetched
+
+// ===== THEME =====
+const root = document.documentElement;
+const themeBtn = document.getElementById('themeToggle');
+function setTheme(dark) {
+    if (dark) { root.setAttribute('data-theme','dark'); themeBtn.innerHTML='&#9788;'; localStorage.setItem('tb-theme','dark'); }
+    else { root.removeAttribute('data-theme'); themeBtn.innerHTML='&#9789;'; localStorage.setItem('tb-theme','light'); }
+    if (chartInst) { const c = dark?'#64748b':'#94a3b8'; chartInst.options.scales.x.ticks.color=c; chartInst.options.scales.y.ticks.color=c; chartInst.update(); }
+}
+if (localStorage.getItem('tb-theme')==='dark') setTheme(true);
+themeBtn.addEventListener('click', () => setTheme(!root.hasAttribute('data-theme')));
+
+// ===== ABOUT TOGGLE =====
+document.getElementById('aboutToggle').addEventListener('click', () => {
+    const body = document.getElementById('aboutBody');
+    const icon = document.getElementById('aboutIcon');
+    const open = body.style.display === 'block';
+    body.style.display = open ? 'none' : 'block';
+    icon.innerHTML = open ? '&#9660;' : '&#9650;';
+});
+
+// ===== COUNTERS =====
+const cbs = document.querySelectorAll('input[type="checkbox"]');
+function updateCounters() {
+    let r=0, s=0, p=0;
+    cbs.forEach(cb => {
+        const card = cb.closest('.sym-card');
+        if (cb.checked) { card.classList.add('selected'); const c=card.dataset.cat; if(c==='resp')r++; if(c==='sys')s++; if(c==='phys')p++; }
+        else { card.classList.remove('selected'); }
+    });
+    document.getElementById('cntResp').textContent = r+'/4';
+    document.getElementById('cntSys').textContent = s+'/5';
+    document.getElementById('cntPhys').textContent = p+'/4';
+    document.getElementById('sumResp').textContent = r+' / 4';
+    document.getElementById('sumSys').textContent = s+' / 5';
+    document.getElementById('sumPhys').textContent = p+' / 4';
+    document.getElementById('sumTotal').textContent = (r+s+p)+' / 13';
+}
+cbs.forEach(cb => cb.addEventListener('change', updateCounters));
+
+// ===== FEATURE IMPORTANCE =====
+async function loadFeatureImportance() {
+    try {
+        const res = await fetch(`${API_BASE}/feature-importance`);
+        if (!res.ok) throw new Error('Failed');
+        featureImportanceData = await res.json();
+        applyRelevanceDots();
+        renderFeatureImportanceBars();
+    } catch(e) {
+        console.warn('Feature importance unavailable:', e);
+        document.querySelectorAll('.rel-dot').forEach(d => d.style.display='none');
+        const container = document.getElementById('fiContainer');
+        if (container) {
+            container.innerHTML = '<div class="empty-state" style="padding:12px; color:var(--text-3);"><div>Feature importance data currently unavailable. Ensure backend is running.</div></div>';
+        }
+    }
+}
+
+function applyRelevanceDots() {
+    if (!featureImportanceData) return;
+    const sorted = [...featureImportanceData].sort((a,b) => b.importance - a.importance);
+    const tierSize = Math.ceil(sorted.length / 3);
+    const tiers = {};
+    sorted.forEach((item, i) => {
+        const key = item.feature.replace(/ /g, '_');
+        if (i < tierSize) tiers[key] = 'high';
+        else if (i < tierSize * 2) tiers[key] = 'medium';
+        else tiers[key] = 'low';
+    });
+    document.querySelectorAll('.rel-dot').forEach(dot => {
+        const feat = dot.dataset.feat;
+        if (tiers[feat]) { dot.classList.add(tiers[feat]); dot.title = tiers[feat]+' relevance'; }
+        else dot.style.display = 'none';
+    });
+}
+
+function renderFeatureImportanceBars() {
+    if (!featureImportanceData) return;
+    const container = document.getElementById('fiContainer');
+    const top8 = featureImportanceData.slice(0, 8);
+    const maxImp = top8[0]?.importance || 1;
+    let html = '';
+    top8.forEach(item => {
+        const pct = ((item.importance / maxImp) * 100).toFixed(1);
+        const name = item.feature === 'gender' ? 'Biological Sex' : item.feature;
+        html += `<div class="fi-row"><div class="fi-name" title="${item.feature}">${name}</div><div class="fi-bar-bg"><div class="fi-bar" style="width:${pct}%"></div></div><div class="fi-val">${(item.importance*100).toFixed(1)}%</div></div>`;
+    });
+    container.innerHTML = html;
+}
+
+// ===== CHART =====
+function renderChart(counts) {
+    const ctx = document.getElementById('distChart').getContext('2d');
+    const isDark = root.hasAttribute('data-theme');
+    const tc = isDark ? '#64748b' : '#94a3b8';
+    const data = { labels: ['Low Risk','Medium Risk','High Risk'], datasets: [{ data: [counts.Low||0, counts.Medium||0, counts.High||0], backgroundColor: ['#22c55e','#f59e0b','#ef4444'], borderRadius: 3 }] };
+    if (chartInst) { chartInst.data=data; chartInst.options.scales.x.ticks.color=tc; chartInst.options.scales.y.ticks.color=tc; chartInst.update(); }
+    else { chartInst = new Chart(ctx, { type:'bar', data, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{stepSize:1,color:tc}},x:{ticks:{color:tc}}} } }); }
+}
+
+function showError(msg) { const e=document.getElementById('errorAlert'); e.textContent=msg; e.style.display='block'; setTimeout(()=>e.style.display='none',5000); }
+
+// ===== HISTORY =====
+async function fetchHistory() {
+    try {
+        const res = await fetch(`${API_BASE}/history`);
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+                    window.historyData = data;
+        let counts = {Low:0,Medium:0,High:0};
+        const tbody = document.getElementById('historyBody');
+        const tbl = document.getElementById('historyTable');
+        const emp = document.getElementById('historyEmpty');
+        tbody.innerHTML = '';
+        if (data.length===0) { tbl.style.display='none'; emp.style.display='block'; }
+        else { tbl.style.display='table'; emp.style.display='none'; }
+        data.forEach(row => {
+            counts[row.risk_name] = (counts[row.risk_name]||0)+1;
+            const d = new Date(row.timestamp);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td class="ts-cell">${d.toLocaleDateString()} ${d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</td><td><span class="badge ${row.risk_name}">${row.risk_name}</span></td><td class="conf-cell">${(row.confidence*100).toFixed(1)}%</td>`;
+            tbody.appendChild(tr);
+        });
+        const total = counts.Low+counts.Medium+counts.High;
+        document.getElementById('kpiTotal').textContent = total;
+        document.getElementById('kpiLow').textContent = counts.Low;
+        document.getElementById('kpiMed').textContent = counts.Medium;
+        document.getElementById('kpiHigh').textContent = counts.High;
+        renderChart(counts);
+    } catch(e) { console.error(e); showError('Could not connect to history API.'); }
+}
+
+// ===== ANIMATED CONFIDENCE COUNTER =====
+function animateCount(el, target, suffix, duration) {
+    const start = performance.now();
+    const from = 0;
+    function step(now) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const current = from + (target - from) * eased;
+        el.textContent = current.toFixed(1) + suffix;
+        if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+}
+
+// ===== GAUGE NEEDLE =====
+function setNeedle(riskLabel) {
+    const needle = document.getElementById('gaugeNeedle');
+    let deg = 0; // -90 = left (low), 0 = center (med), 90 = right (high)
+    if (riskLabel === 0) deg = -60;
+    else if (riskLabel === 1) deg = 0;
+    else if (riskLabel === 2) deg = 60;
+    needle.style.transform = `rotate(${deg}deg)`;
+    needle.setAttribute('transform', `rotate(${deg}, 100, 95)`);
+}
+
+// ===== PIPELINE ANIMATION =====
+function setPipelineAnimating(on) {
+    const wrap = document.getElementById('pipelineWrap');
+    if (on) wrap.classList.add('animating');
+    else wrap.classList.remove('animating');
+}
+
+// ===== FORM SUBMIT =====
+document.getElementById('predictionForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('btnText');
+    const spinner = document.getElementById('btnSpinner');
+    const skel = document.getElementById('skelLoader');
+    const resCard = document.getElementById('resultCard');
+
+    btn.disabled = true;
+    btnText.textContent = 'Analyzing symptoms...';
+    spinner.style.display = 'block';
+    resCard.style.display = 'none';
+    skel.style.display = 'block';
+    setPipelineAnimating(true);
+
+    const payload = {
+        gender: parseInt(document.getElementById('gender').value),
+        fever_for_two_weeks: document.getElementById('fever_for_two_weeks').checked?1:0,
+        coughing_blood: document.getElementById('coughing_blood').checked?1:0,
+        sputum_mixed_with_blood: document.getElementById('sputum_mixed_with_blood').checked?1:0,
+        night_sweats: document.getElementById('night_sweats').checked?1:0,
+        chest_pain: document.getElementById('chest_pain').checked?1:0,
+        back_pain_in_certain_parts: document.getElementById('back_pain_in_certain_parts').checked?1:0,
+        shortness_of_breath: document.getElementById('shortness_of_breath').checked?1:0,
+        weight_loss: document.getElementById('weight_loss').checked?1:0,
+        body_feels_tired: document.getElementById('body_feels_tired').checked?1:0,
+        lumps_that_appear_around_the_armpits_and_neck: document.getElementById('lumps_that_appear_around_the_armpits_and_neck').checked?1:0,
+        cough_and_phlegm_continuously_for_two_weeks_to_four_weeks: document.getElementById('cough_and_phlegm_continuously_for_two_weeks_to_four_weeks').checked?1:0,
+        swollen_lymph_nodes: document.getElementById('swollen_lymph_nodes').checked?1:0,
+        loss_of_appetite: document.getElementById('loss_of_appetite').checked?1:0
+    };
+
+    try {
+        const response = await fetch(`${API_BASE}/predict`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const data = await response.json();
+
+        skel.style.display = 'none';
+        setPipelineAnimating(false);
+
+        const inner = document.getElementById('resultInner');
+        inner.className = 'result-inner ' + data.risk_name;
+        document.getElementById('resScore').textContent = data.risk_name;
+
+        // Animate confidence
+        animateCount(document.getElementById('resConf'), data.confidence * 100, '%', 800);
+
+        // Symptom counts
+        let r=0,s=0,p=0;
+        cbs.forEach(cb => { if(cb.checked) { const c=cb.closest('.sym-card').dataset.cat; if(c==='resp')r++; if(c==='sys')s++; if(c==='phys')p++; } });
+        document.getElementById('resTotal').textContent = r+s+p;
+        document.getElementById('insResp').textContent = r;
+        document.getElementById('insSys').textContent = s;
+        document.getElementById('insPhys').textContent = p;
+
+        setNeedle(data.risk_label);
+        resCard.style.display = 'block';
+        const printBtn = document.getElementById('printReportBtn');
+        if (printBtn) printBtn.style.display = 'block';
+        await fetchHistory();
+    } catch(err) { console.error(err); showError('Prediction failed: '+err.message); skel.style.display='none'; setPipelineAnimating(false); }
+    finally { btn.disabled=false; btnText.textContent='Run Risk Assessment'; spinner.style.display='none'; }
+});
+
+
+// ===== RESET ASSESSMENT =====
+document.getElementById('resetBtn').addEventListener('click', () => {
+    // Uncheck all symptoms
+    cbs.forEach(cb => { cb.checked = false; });
+    // Update visual states and counters
+    updateCounters();
+    // Reset gender to default
+    document.getElementById('gender').value = "0";
+
+    // Reset Result Card
+    document.getElementById('resultCard').style.display = 'none';
+    document.getElementById('skelLoader').style.display = 'none';
+    setPipelineAnimating(false);
+    
+    // Hide Print Button
+    const printBtn = document.getElementById('printReportBtn');
+    if (printBtn) printBtn.style.display = 'none';
+
+    // Reset Needle (put it to lowest position)
+    setNeedle(0);
+});
+
+
+// ===== CLEAR HISTORY =====
+document.getElementById('clearHistoryBtn').addEventListener('click', () => {
+    document.getElementById('clearHistoryModal').style.display = 'flex';
+});
+document.getElementById('cancelClearBtn').addEventListener('click', () => {
+    document.getElementById('clearHistoryModal').style.display = 'none';
+});
+document.getElementById('confirmClearBtn').addEventListener('click', async () => {
+    document.getElementById('clearHistoryModal').style.display = 'none';
+    try {
+        const res = await fetch(`${API_BASE}/assessment-history`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to clear history');
+        await fetchHistory();
+    } catch (e) {
+        showError('Could not clear history: ' + e.message);
+    }
+});
+
+// ===== INIT =====
+
+        // ===== GIS MAP (LEAFLET) =====
+        try {
+            const map = L.map('hotspotMap').setView([3.1390, 101.6869], 10);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+            }).addTo(map);
+
+            // Mock Hotspot Clusters for visual impact
+            L.circle([3.1390, 101.6869], { color: 'red', fillColor: '#ef4444', fillOpacity: 0.4, radius: 3000 }).addTo(map).bindPopup('High Risk Cluster (Demo Data)');
+            L.circle([3.0500, 101.5900], { color: 'orange', fillColor: '#f59e0b', fillOpacity: 0.4, radius: 4500 }).addTo(map).bindPopup('Medium Risk Zone (Demo Data)');
+            L.circle([3.2000, 101.7500], { color: 'green', fillColor: '#22c55e', fillOpacity: 0.4, radius: 2500 }).addTo(map).bindPopup('Low Risk Area (Demo Data)');
+        } catch(e) { console.log('Map init skipped (in print context)'); }
+
+        // ===== EXPORT CSV =====
+        document.getElementById('exportCsvBtn').addEventListener('click', () => {
+            if (!window.historyData || window.historyData.length === 0) {
+                alert('No history data to export.');
+                return;
+            }
+            const headers = ['Timestamp', 'Risk Label', 'Risk Name', 'Confidence'];
+            const rows = window.historyData.map(r => [
+                r.timestamp, r.risk_label, r.risk_name, r.confidence
+            ]);
+            const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "tb_risk_history.csv");
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        });
+
+        // ===== PRINT PATIENT REPORT =====
+        const printReportBtn = document.getElementById('printReportBtn');
+        if (printReportBtn) {
+            printReportBtn.addEventListener('click', () => {
+                window.print();
+            });
+        }
+
+            fetchHistory();
+loadFeatureImportance();
+</script>
+</body>
+</html>

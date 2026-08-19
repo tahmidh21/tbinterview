@@ -1,0 +1,9 @@
+﻿__pycache__/
+.pytest_cache/
+*.pyc
+combined_test.js
+debug.js
+mock_env.js
+test_fi.js
+test_fi_script.py
+test_full.js
